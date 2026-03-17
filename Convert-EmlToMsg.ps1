@@ -8,7 +8,8 @@ try {
             $exePath = Convert-Path $exePath   # forces full absolute path
         }
         Split-Path -Parent $exePath
-    } else {
+    }
+    else {
         # Direct .ps1 mode
         $PSScriptRoot
     }
@@ -26,23 +27,66 @@ try {
             $deleteOriginal = $true
             continue
         }
-        if (Test-Path -LiteralPath $arg -PathType Leaf) {
-            if ($arg -like "*.eml") {
-                $files += $arg
-            } else {
-                Write-Host "⚠️  Skipping non-.eml file: $arg" -ForegroundColor Yellow
+        # Skip empty arguments
+        if ([string]::IsNullOrWhiteSpace($arg)) { continue }
+
+        # Try to expand as wildcard / folder / file
+        $expanded = $null
+
+        try {
+            # -LiteralPath when no wildcard → exact match (good for filenames with [])
+            # -Path when it looks like it contains wildcards
+            if ($arg -match '[\?\*\[\]]') {
+                $expanded = Get-ChildItem -Path $arg -File -ErrorAction SilentlyContinue
             }
-        } else {
-            Write-Host "❌ File not found: $arg" -ForegroundColor Red
+            else {
+                $expanded = Get-ChildItem -LiteralPath $arg -File -ErrorAction SilentlyContinue
+            }
+        }
+        catch {
+            # probably invalid path syntax — just skip
+        }
+
+        if ($expanded) {
+            # Filter only .eml files (case insensitive)
+            $emlFiles = $expanded | Where-Object { $_.Extension -ieq '.eml' }
+            
+            if ($emlFiles.Count -gt 0) {
+                $files += $emlFiles.FullName
+            }
+            else {
+                Write-Host "⚠️  No .eml files found in: $arg" -ForegroundColor Yellow
+            }
+        }
+        else {
+            # Last chance: maybe it's a single file without wildcard
+            if (Test-Path -LiteralPath $arg -PathType Leaf) {
+                if ($arg -like "*.eml" -or $arg -like "*.EML") {
+
+                    $files += $arg
+                }
+                else {
+                    Write-Host "⚠️  Skipping non-.eml file: $arg" -ForegroundColor Yellow
+                }
+            }
+            else {
+                Write-Host "❌ Not found or inaccessible: $arg" -ForegroundColor Red
+            }
         }
     }
 
+    # Remove duplicates (in case same file came from multiple patterns)
+    $files = $files | Sort-Object -Unique
+
     if ($files.Count -eq 0) {
+        Write-Host "Convert-EmlToMsg v1.1" -ForegroundColor Yellow
         Write-Host "No .eml files provided." -ForegroundColor Yellow
         Write-Host "Usage: Drag .eml files onto the .exe or use SendTo" -ForegroundColor Yellow
         Read-Host "Press Enter to exit"
         exit 0
     }
+
+    Write-Host "Found $($files.Count) .eml file(s) to convert" -ForegroundColor Cyan
 
     # ====================== CONVERSION LOOP ======================
     foreach ($emlPath in $files) {
@@ -59,28 +103,35 @@ try {
         Write-Host "✅ Converted: $msgPath" -ForegroundColor Green
         
         if ($deleteOriginal) {
-            Remove-Item -LiteralPath $emlPath -Force
-            Write-Host "   (original .eml deleted)" -ForegroundColor DarkGray
+            Remove-Item -LiteralPath $emlPath -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $emlPath)) {
+                Write-Host "   (original .eml deleted)" -ForegroundColor DarkGray
+            }
+            else {
+                Write-Host "   (failed to delete original)" -ForegroundColor DarkYellow
+            }
         }
     }
+
+    Write-Host "`nDone." -ForegroundColor Green
 }
 catch {
     Write-Host "`n=== ERRORS OCCURRED ===" -ForegroundColor Red
     $errorInfo = [PSCustomObject]@{
-        Timestamp       = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        ErrorMessage    = $_.Exception.Message
+        Timestamp             = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        ErrorMessage          = $_.Exception.Message
         FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-        Category        = $_.CategoryInfo.Category
-        Reason          = $_.CategoryInfo.Reason
-        TargetObject    = $_.TargetObject
-        ScriptName      = $_.InvocationInfo.ScriptName
-        LineNumber      = $_.InvocationInfo.ScriptLineNumber
-        Line            = $_.InvocationInfo.Line.Trim()
-        PositionMessage = $_.InvocationInfo.PositionMessage
-        ExceptionType   = $_.Exception.GetType().FullName
-        InnerException  = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $null }
-        StackTrace      = $_.ScriptStackTrace
-        FullError       = $_ | Out-String  # Complete error record as string
+        Category              = $_.CategoryInfo.Category
+        Reason                = $_.CategoryInfo.Reason
+        TargetObject          = $_.TargetObject
+        ScriptName            = $_.InvocationInfo.ScriptName
+        LineNumber            = $_.InvocationInfo.ScriptLineNumber
+        Line                  = $_.InvocationInfo.Line.Trim()
+        PositionMessage       = $_.InvocationInfo.PositionMessage
+        ExceptionType         = $_.Exception.GetType().FullName
+        InnerException        = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $null }
+        StackTrace            = $_.ScriptStackTrace
+        FullError             = $_ | Out-String  # Complete error record as string
     }
 
     # Output to console (clear and readable)
