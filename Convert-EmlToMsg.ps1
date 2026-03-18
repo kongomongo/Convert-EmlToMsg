@@ -1,4 +1,13 @@
 try {
+    # Check Version Requirement for Dependencies
+    $RequiredPSMajorVersion = 7
+
+    if ($PSVersionTable.PSVersion.Major -lt $RequiredPSMajorVersion) {
+        Write-Warning "This application requires PowerShell $RequiredPSMajorVersion or higher."
+        Write-Warning "You are running PowerShell $($PSVersionTable.PSVersion.Major). Please install PowerShell 7+."
+        # Optionally, exit the script if version is too low
+        #exit 1
+    }
 
     # === ROBUST SCRIPT DIRECTORY (works in .ps1 AND compiled .exe - even when only filename is returned) ===
     $ScriptDir = if (-not $PSScriptRoot) {
@@ -79,7 +88,7 @@ try {
     $files = $files | Sort-Object -Unique
 
     if ($files.Count -eq 0) {
-        Write-Host "Convert-EmlToMsg v1.1" -ForegroundColor Yellow
+        Write-Host "Convert-EmlToMsg v1.2" -ForegroundColor Yellow
         Write-Host "No .eml files provided." -ForegroundColor Yellow
         Write-Host "Usage: Drag .eml files onto the .exe or use SendTo" -ForegroundColor Yellow
         Read-Host "Press Enter to exit"
